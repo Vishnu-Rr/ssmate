@@ -1,5 +1,5 @@
-// Command ssmate connects to EC2 instances through AWS SSM Session Manager
-// without requiring you to know an instance ID.
+// Command ssmate reaches private machines in AWS, Azure and OCI by name,
+// without a jump host or an open port.
 package main
 
 import (
@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"syscall"
 
 	"github.com/Vishnu-Rr/ssmate/internal/cli"
@@ -50,6 +51,11 @@ func resolveVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return version
+	}
+	// `go install ...@v0.1.2` builds from the module proxy, which carries no
+	// VCS details, but the module's own version is recorded.
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return strings.TrimPrefix(v, "v")
 	}
 	var revision string
 	var dirty bool

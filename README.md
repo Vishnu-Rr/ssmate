@@ -314,23 +314,114 @@ offers nothing.
 
 ## Installation
 
-```
+### macOS, with Homebrew
+
+```bash
 brew install Vishnu-Rr/tap/ssmate
 ```
 
-Or download a binary from the [releases page](https://github.com/Vishnu-Rr/ssmate/releases),
-or `go install github.com/Vishnu-Rr/ssmate/cmd/ssmate@latest`.
+Upgrade with `brew upgrade --cask Vishnu-Rr/tap/ssmate`, remove with
+`brew uninstall --cask ssmate`.
 
-A cloud you have not signed in to is simply absent — detection is a local
-filesystem check, so ssmate never mentions a cloud you do not use and never
-makes a network call to find out. `ssmate doctor` prints the install or
-sign-in command for whichever ones you do.
+### Linux
 
-| Cloud | Needs |
-|---|---|
-| AWS | credentials, and AWS's `session-manager-plugin` |
-| Azure | `az login`, and `az extension add --name bastion`; for Arc, `az extension add --name ssh` |
-| OCI | `~/.oci/config`, and `ssh` |
+Pick the newest version and your processor:
+
+```bash
+VERSION=$(curl -s https://api.github.com/repos/Vishnu-Rr/ssmate/releases/latest | grep -o '"tag_name": *"v[^"]*' | sed 's/.*"v//')
+ARCH=amd64        # or arm64
+BASE=https://github.com/Vishnu-Rr/ssmate/releases/download/v$VERSION
+```
+
+Debian and Ubuntu:
+
+```bash
+curl -LO $BASE/ssmate_${VERSION}_linux_${ARCH}.deb
+sudo dpkg -i ssmate_${VERSION}_linux_${ARCH}.deb
+```
+
+RHEL, Fedora, Oracle Linux and Amazon Linux:
+
+```bash
+curl -LO $BASE/ssmate_${VERSION}_linux_${ARCH}.rpm
+sudo rpm -i ssmate_${VERSION}_linux_${ARCH}.rpm
+```
+
+Any other distribution:
+
+```bash
+curl -L $BASE/ssmate_${VERSION}_linux_${ARCH}.tar.gz | tar -xz ssmate
+sudo install ssmate /usr/local/bin/
+```
+
+### Windows
+
+In PowerShell, with the version from the
+[releases page](https://github.com/Vishnu-Rr/ssmate/releases):
+
+```powershell
+$v = "0.1.2"
+Invoke-WebRequest "https://github.com/Vishnu-Rr/ssmate/releases/download/v$v/ssmate_${v}_windows_amd64.zip" -OutFile ssmate.zip
+Expand-Archive ssmate.zip -DestinationPath "$env:LOCALAPPDATA\ssmate"
+```
+
+Then add `%LOCALAPPDATA%\ssmate` to your `PATH`. On an ARM machine use the
+`windows_arm64` file instead.
+
+### From source
+
+With Go 1.26 or newer:
+
+```bash
+go install github.com/Vishnu-Rr/ssmate/cmd/ssmate@latest
+```
+
+### Checking a download
+
+Every release lists a SHA-256 for each file:
+
+```bash
+curl -LO $BASE/ssmate_${VERSION}_checksums.txt
+shasum -a 256 -c ssmate_${VERSION}_checksums.txt --ignore-missing    # sha256sum on Linux
+```
+
+### What each cloud needs
+
+ssmate holds no credentials and moves no bytes itself: it signs in with what
+your cloud's own tools already use, and hands each session to the vendor's
+own program. Install the ones for the clouds you use; a cloud you have not
+signed in to is simply absent, and ssmate never makes a network call to find
+out.
+
+| Cloud | Sign in | Install |
+|---|---|---|
+| AWS | `aws configure` or `aws sso login` | the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
+| Azure | `az login` | the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), then `az extension add --name bastion`, and for Arc `az extension add --name ssh` |
+| OCI | `oci setup config`, which writes `~/.oci/config` | `ssh` |
+
+### First run
+
+```bash
+ssmate doctor     # checks every cloud's sign-in and tools, and prints what is missing
+ssmate            # the machine list
+```
+
+The first run reads every account and region you are signed in to, which
+takes a moment; after that the list opens from a cache, and `--refresh`
+rebuilds it.
+
+### Shell completion
+
+Completion offers your machines, regions, accounts and tags.
+
+```bash
+ssmate completion zsh > $(brew --prefix)/share/zsh/site-functions/_ssmate   # zsh, macOS
+ssmate completion zsh > "${fpath[1]}/_ssmate"                               # zsh, Linux
+echo 'source <(ssmate completion bash)' >> ~/.bashrc                        # bash
+ssmate completion fish > ~/.config/fish/completions/ssmate.fish            # fish
+```
+
+Start a new shell afterwards.
 
 ## Why not the vendor CLIs?
 
