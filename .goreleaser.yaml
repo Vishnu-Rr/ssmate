@@ -1,0 +1,68 @@
+version: 2
+
+project_name: ssmate
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ssmate
+    main: ./cmd/ssmate
+    binary: ssmate
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+# Homebrew wants casks for prebuilt binaries; the brews key is deprecated
+# because formulae are meant for source builds.
+homebrew_casks:
+  - name: ssmate
+    repository:
+      owner: Vishnu-Rr
+      name: homebrew-tap
+      # The workflow's own token can only write to this repository, so the
+      # tap needs one of its own: a fine-grained token with contents write
+      # on Vishnu-Rr/homebrew-tap, stored as a repository secret.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/Vishnu-Rr/ssmate
+    description: Reach private machines in AWS, Azure and OCI by name, without a jump host
+    # The binary is not notarised, so macOS would refuse to run it after a
+    # download. Clearing the quarantine flag on install is what lets it run.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ssmate"]
+          end
+
+nfpms:
+  - formats: [deb, rpm]
+    maintainer: Vishnu R <72242086+Vishnu-Rr@users.noreply.github.com>
+    description: Reach private machines in AWS, Azure and OCI by name, without a jump host
+    license: Apache-2.0
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

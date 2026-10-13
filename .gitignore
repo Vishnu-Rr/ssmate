@@ -1,0 +1,6 @@
+/ssmate
+/dist/
+*.test
+coverage.out
+.DS_Store
+spike_*.go
