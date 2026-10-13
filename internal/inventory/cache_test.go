@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -52,6 +53,12 @@ func TestSaveCacheCreatesParentDirectory(t *testing.T) {
 }
 
 func TestSaveCacheWritesPrivatePermissions(t *testing.T) {
+	// Windows has no Unix permission bits: access there comes from the
+	// user profile's access lists, which the cache directory inherits, and
+	// Go reports every writable file as 0666 whatever was asked for.
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not how Windows restricts access")
+	}
 	path := filepath.Join(t.TempDir(), "cache.json")
 	if err := SaveCache(path, nil); err != nil {
 		t.Fatalf("SaveCache: %v", err)
