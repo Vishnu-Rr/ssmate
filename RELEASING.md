@@ -14,19 +14,21 @@ attests their provenance, and updates the cask in
 
 ## One-time setup
 
-The workflow's own token can write only to this repository, so updating the
-tap needs a token of its own:
+The workflow's own token can write only to this repository, so the cask is
+pushed to the tap over SSH with a deploy key, which can write to the tap and
+nothing else:
 
-1. Create a fine-grained personal access token with access to the
-   `Vishnu-Rr/homebrew-tap` repository only, and the permission
-   **Contents: Read and write**.
-2. Save it in this repository as the Actions secret
-   `HOMEBREW_TAP_GITHUB_TOKEN`.
+1. Generate a key with no passphrase: `ssh-keygen -t ed25519 -N "" -f tapkey`.
+2. Add `tapkey.pub` to `Vishnu-Rr/homebrew-tap` as a deploy key with write
+   access: `gh repo deploy-key add tapkey.pub --repo Vishnu-Rr/homebrew-tap --allow-write`.
+3. Save the private key as this repository's Actions secret
+   `HOMEBREW_TAP_DEPLOY_KEY`: `gh secret set HOMEBREW_TAP_DEPLOY_KEY < tapkey`.
+4. Delete both files.
 
 ## Before tagging
 
 ```bash
 go test -race ./...
 goreleaser check
-goreleaser release --snapshot --clean --skip=publish   # builds everything locally, publishes nothing
+HOMEBREW_TAP_DEPLOY_KEY=x goreleaser release --snapshot --clean --skip=publish   # builds everything, publishes nothing
 ```
