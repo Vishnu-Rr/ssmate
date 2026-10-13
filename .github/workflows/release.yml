@@ -26,6 +26,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      # subject-checksums takes one file path, not a pattern, and the
+      # checksums file is named after the version; subject-path takes
+      # patterns, so the artifacts are named directly.
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-checksums: ./dist/ssmate_*_checksums.txt
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
