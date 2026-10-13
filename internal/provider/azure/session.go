@@ -37,19 +37,16 @@ func (p Provider) Shell(ctx context.Context, n inventory.Node, o provider.Sessio
 	if err != nil {
 		return err
 	}
-	user := o.User
-	if user == "" {
-		user, _ = n.Detailed("login_user")
-	}
-	if user == "" {
-		return exitcode.New(exitcode.Err,
-			fmt.Sprintf("cannot tell which user to log in as on %s", n.DisplayName()),
-			"pass --user", nil)
-	}
-
-	login, err := loginArgs(o.Auth, o.Key, user)
+	auth, user, err := resolveLogin(n, o)
 	if err != nil {
 		return err
+	}
+	login, err := loginArgs(auth, o.Key, user)
+	if err != nil {
+		return err
+	}
+	if auth == "aad" && !o.Print && len(o.Command) == 0 {
+		fmt.Fprintln(os.Stderr, "Signing in with your Microsoft account (Entra ID).")
 	}
 	args := append([]string{
 		"network", "bastion", "ssh",
@@ -69,6 +66,39 @@ func (p Provider) Shell(ctx context.Context, n inventory.Node, o provider.Sessio
 	// terminal. ssmate never sees it, never stores it and never passes it as
 	// an argument, which is the only way to handle one safely.
 	return runAz(ctx, args)
+}
+
+// resolveLogin decides how to log in on a VM, and as whom.
+//
+// What was asked for wins. Otherwise a key given with --key means key login,
+// and a VM with Microsoft's Entra login extension is signed in to as yourself,
+// which needs no password or key at all. Only then does it fall back to a
+// password for the account the VM was created with. A --user with no --auth
+// asks for that local account, so it never turns into an Entra sign-in.
+func resolveLogin(n inventory.Node, o provider.SessionOptions) (auth, user string, err error) {
+	auth = strings.ToLower(o.Auth)
+	if auth == "" {
+		login, _ := n.Detailed("login")
+		switch {
+		case o.Key != "":
+			auth = "key"
+		case o.User == "" && login == entraLogin:
+			auth = "aad"
+		}
+	}
+	if auth == "aad" || auth == "entra" {
+		return "aad", "", nil
+	}
+	user = o.User
+	if user == "" {
+		user, _ = n.Detailed("login_user")
+	}
+	if user == "" {
+		return "", "", exitcode.New(exitcode.Err,
+			fmt.Sprintf("cannot tell which user to log in as on %s", n.DisplayName()),
+			"pass --user", nil)
+	}
+	return auth, user, nil
 }
 
 // loginArgs turns --auth and --key into what the bastion command expects.

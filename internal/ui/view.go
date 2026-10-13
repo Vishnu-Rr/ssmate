@@ -473,7 +473,7 @@ func tagChips(n inventory.Node, t Theme) string {
 // "bastion_name". Showing both would spend a line of a small box on a hundred
 // characters of identifier.
 func detailKeys(n inventory.Node) []string {
-	want := []string{"bastion_name", "bastion", "bastion_via", "bastion_sku", "vcn_name", "vnet",
+	want := []string{"bastion_name", "bastion", "login", "bastion_via", "bastion_sku", "vcn_name", "vnet",
 		"login_user", "resource_group", "compartment", "platform_name", "shape", "size"}
 	var out []string
 	haveBastion := false
@@ -510,6 +510,8 @@ func detailLabel(key string) string {
 		return "network"
 	case "login_user":
 		return "user"
+	case "login":
+		return "login"
 	case "resource_group":
 		return "group"
 	case "compartment":

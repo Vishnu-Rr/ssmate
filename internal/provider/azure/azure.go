@@ -273,6 +273,18 @@ func buildNode(
 	if u := adminUser(vm); u != "" {
 		n.Detail["login_user"] = u
 	}
+	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.OSDisk != nil &&
+		vm.Properties.StorageProfile.OSDisk.OSType != nil {
+		n.OS = string(*vm.Properties.StorageProfile.OSDisk.OSType)
+	}
+	// With Microsoft's Entra login extension on the machine, you sign in as
+	// yourself and no password or key exists to manage, so it becomes the
+	// default. The listing names each extension by the name it was
+	// installed under, which for this one is its type unless someone chose
+	// otherwise.
+	if hasExtension(vm, entraExtension) {
+		n.Detail["login"] = entraLogin
+	}
 
 	gws := byVNet[netKey]
 	if len(gws) > 0 {
@@ -442,4 +454,23 @@ func listBastions(ctx context.Context, c *armnetwork.BastionHostsClient) (map[st
 		hosts = append(hosts, page.Value...)
 	}
 	return gatewaysByVNet(hosts), nil
+}
+
+// entraExtension is the extension that lets a Linux VM accept Microsoft
+// Entra ID sign-in over SSH.
+const entraExtension = "AADSSHLoginForLinux"
+
+// entraLogin is how a VM with that extension is described.
+const entraLogin = "Microsoft sign-in"
+
+// hasExtension reports whether a VM carries an extension of that name. The
+// VM listing returns its extensions as child resources, so this costs no
+// call of its own.
+func hasExtension(vm *armcompute.VirtualMachine, name string) bool {
+	for _, r := range vm.Resources {
+		if r != nil && strings.EqualFold(nameOf(deref(r.ID)), name) {
+			return true
+		}
+	}
+	return false
 }

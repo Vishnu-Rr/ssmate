@@ -223,13 +223,23 @@ ssmate ls -o ids | xargs ...     # one identifier per line; also names, json
 |---|---|
 | `--user ubuntu` | log in as this user; defaults to the account the machine was built with |
 | `--key ~/.ssh/prod` | your private key for the machine, on clouds reached over SSH |
-| `--auth key` | how to log in on Azure: `password`, `key` or `aad`. Bastion defaults to `password`; Arc to `aad` unless `--user` names a local account |
+| `--auth key` | how to log in on Azure: `password`, `key` or `aad`. Left out, ssmate picks for you (below) |
 | `--reason "INC-123"` | recorded wherever the cloud keeps an audit log |
 
-On Azure, `password` works on every machine without preparation and never
-passes through ssmate — `az` reads it from the terminal itself. `key` uses the
-key given with `--key`, and `aad` signs you in with your Entra ID, where the
-machine allows it. On OCI your own SSH identity logs you in, from `--key` or
+On Azure, with no `--auth`, ssmate picks the login in this order:
+
+1. `--key` given: key login.
+2. The VM has Microsoft's Entra login extension (`AADSSHLoginForLinux`) and no
+   `--user` was given: you sign in as yourself with your Microsoft account. No
+   password or key exists to manage; you need the **Virtual Machine User Login**
+   role on the VM, or **Virtual Machine Administrator Login** for sudo.
+3. Otherwise a password for the account the VM was created with, which works on
+   every VM without preparation and never passes through ssmate: `az` reads it
+   from the terminal itself.
+
+`ssmate doctor <vm>` says which one applies, and on a VM without the extension
+prints the three commands that enable Microsoft sign-in. Arc machines sign in
+with your Microsoft account unless `--user` names a local account. On OCI your own SSH identity logs you in, from `--key` or
 your agent; the throwaway key a bastion session opens with only ever reaches
 the bastion.
 

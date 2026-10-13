@@ -39,8 +39,45 @@ func (p Provider) Checks(ctx context.Context, n *inventory.Node, query string) d
 	}
 	if query != "" {
 		reg = append(reg, targetChecks(n, query)...)
+		if n != nil && !strings.EqualFold(n.OS, "Windows") {
+			reg = append(reg, vmLoginCheck(*n))
+		}
 	}
 	return reg
+}
+
+// vmLoginCheck says how the VM itself will be logged in to. With Microsoft's
+// Entra login extension you sign in as yourself and nothing secret exists;
+// without it the VM asks for its password, and the fix is three commands an
+// administrator runs once, printed here rather than run.
+func vmLoginCheck(n inventory.Node) doctor.Check {
+	name := "sign-in on the machine"
+	return doctor.Check{
+		Name: name,
+		Run: func(context.Context) doctor.Result {
+			if v, _ := n.Detailed("login"); v == entraLogin {
+				return doctor.Result{Name: name, Severity: doctor.Pass,
+					Detail: "Microsoft sign-in (Entra ID); you need Virtual Machine User Login on it, " +
+						"or Virtual Machine Administrator Login for sudo"}
+			}
+			group, _ := n.Detailed("resource_group")
+			vm := nameOf(n.ID)
+			scope := n.ID
+			if group != "" {
+				scope = strings.SplitN(n.ID, "/providers/", 2)[0]
+			}
+			return doctor.Result{
+				Name: name, Severity: doctor.Warn,
+				Detail: "the VM will ask for a password, or take your key with --key; Microsoft sign-in is not enabled on it",
+				Remedy: "to sign in as yourself with no password, enable Microsoft sign-in once:\n" +
+					"    az vm identity assign --resource-group " + group + " --name " + vm + "\n" +
+					"    az vm extension set --publisher Microsoft.Azure.ActiveDirectory --name AADSSHLoginForLinux \\\n" +
+					"        --resource-group " + group + " --vm-name " + vm + "\n" +
+					"    az role assignment create --role \"Virtual Machine User Login\" --assignee <you@example.com> \\\n" +
+					"        --scope " + scope,
+			}
+		},
+	}
 }
 
 // arcAgentCheck reports whether the machine's Arc agent is connected, which is

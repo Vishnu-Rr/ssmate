@@ -105,7 +105,7 @@ func NewRoot(version string) *cobra.Command {
 
 	// How to connect.
 	f.StringVar(&opts.user, "user", "", "log in as this `user`; defaults to the account the machine was built with")
-	f.StringVar(&opts.auth, "auth", "", "how to log in on Azure: `method` is password, key or aad; Arc signs in with aad unless --user is given")
+	f.StringVar(&opts.auth, "auth", "", "how to log in on Azure: `method` is password, key or aad; by default Microsoft sign-in where the VM allows it")
 	f.StringVar(&opts.key, "key", "", "private key `file` to log in to the machine with, where the cloud uses SSH")
 	f.StringVar(&opts.bind, "bind", "127.0.0.1", "`address` a forwarded port listens on; 0.0.0.0 lets containers reach it")
 	f.StringVar(&opts.reason, "reason", "", "a `reason`, recorded wherever the cloud keeps an audit log")
