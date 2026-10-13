@@ -15,6 +15,10 @@ inside the machine's own network and the cloud checks who you are before
 letting you through. ssmate finds the machine, works out whether it can be
 reached and why not, and hands the session to the vendor's own program.
 
+**[ssmate Field Guide](https://claude.ai/artifact/6PbP6av6bNNDgsUsHxH1oj)**: install
+steps, everyday use, the ways in, how it is designed and how releases reach the
+Homebrew tap, on one page.
+
 ## The machine list
 
 Run `ssmate` with no arguments.
