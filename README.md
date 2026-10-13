@@ -427,6 +427,97 @@ ssmate completion fish > ~/.config/fish/completions/ssmate.fish            # fis
 
 Start a new shell afterwards.
 
+## Permissions and cloud-side setup
+
+ssmate needs two kinds of access: to **read** what exists, so it can list
+machines and judge whether each can be reached, and to **open sessions**. It
+changes nothing in any cloud apart from the short-lived sessions it opens.
+
+### What your login must be allowed to do
+
+**AWS**, as an IAM policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "FindMachines",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeRegions",
+        "ec2:DescribeInstances",
+        "ssm:DescribeInstanceInformation",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OpenSessions",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": [
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:ssm:*:*:managed-instance/*",
+        "arn:aws:ssm:*::document/AWS-StartInteractiveCommand",
+        "arn:aws:ssm:*::document/AWS-StartPortForwardingSession",
+        "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
+      ]
+    },
+    {
+      "Sid": "EndOwnSessions",
+      "Effect": "Allow",
+      "Action": ["ssm:TerminateSession", "ssm:ResumeSession"],
+      "Resource": [
+        "arn:aws:ssm:*:*:session/${aws:username}-*",
+        "arn:aws:ssm:*:*:session/${aws:userid}-*"
+      ]
+    }
+  ]
+}
+```
+
+`ssm:ListTagsForResource` only reads the `ssmate:source` tag on machines
+registered from outside AWS; without it, ssmate still links them by address
+and hostname.
+
+**Azure**, as role assignments:
+
+| To | Role |
+|---|---|
+| list machines | **Reader** on the subscriptions or resource groups |
+| connect through Azure Bastion | **Reader** on the VM, its network interface and the bastion, and on the virtual network when the bastion is in a peered one |
+| sign in on the VM with your Microsoft account | **Virtual Machine User Login**, or **Virtual Machine Administrator Login** for sudo |
+| reach an Arc machine with a local account | **Virtual Machine Local User Login** |
+
+**OCI**, as policy statements (narrow `in tenancy` to a compartment if you
+prefer):
+
+```
+Allow group <group> to inspect compartments in tenancy
+Allow group <group> to read instance-family in tenancy
+Allow group <group> to read virtual-network-family in tenancy
+Allow group <group> to use bastion in tenancy
+Allow group <group> to manage bastion-session in tenancy
+Allow group <group> to read instance-agent-plugins in tenancy
+```
+
+The network read is what lets ssmate judge a bastion's rules before a session
+is tried; the plugin read is only for managed SSH.
+
+### What must exist on the cloud side
+
+| Way in | Already in place for it to work |
+|---|---|
+| **AWS Session Manager** | The SSM agent running (preinstalled on Amazon Linux and Ubuntu images), an instance role with `AmazonSSMManagedInstanceCore`, and outbound HTTPS from the machine to AWS |
+| **Azure Bastion** | A **Standard or Premium** bastion with **tunnelling on**, in the machine's network or a peered one; port 22 allowed from the bastion; an account on the VM |
+| **Azure Arc** | The Connected Machine agent connected, and `sshd` running |
+| **OCI Bastion** | An active bastion in the machine's VCN whose allowlist admits your address, security rules letting it reach port 22, and your key on the machine; or, for managed SSH, the Bastion plugin running |
+
+A machine outside AWS can also be registered with Session Manager, after which
+it connects the way an EC2 instance does: nothing open and no key needed.
+`ssmate doctor <machine>` prints the steps, filled in for that machine.
+
 ## Why not the vendor CLIs?
 
 `aws ssm start-session`, `az network bastion ssh` and `oci bastion session
