@@ -286,6 +286,41 @@ exit status too. A VM built with password login turned off
 is never offered the password fallback; ssmate asks for `--key` or Microsoft
 sign-in instead.
 
+#### Why Microsoft sign-in
+
+What it replaces is a shared local password or key. Through a bastion the
+password alone does not get anyone in: opening the tunnel needs your cloud
+login and read access to the machine, so a leaver whose account is disabled
+is stopped there. The trouble is the secret itself. It is the same for
+everyone and works from anywhere that can reach port 22, such as another
+machine in the network, a VPN or a jump host, without any cloud login. It
+cannot be taken back from one person without changing it for all, on every
+machine. Everyone who has it arrives as the same account, so nobody can say
+who did what. And every session starts with a prompt.
+
+| | With Microsoft sign-in |
+|---|---|
+| **Who you are** | yourself (`you@example.com`), under your organisation's multi-factor and access policies |
+| **Who is allowed** | an Azure role: *Virtual Machine User Login*, or *Virtual Machine Administrator Login* for sudo; one assignment can cover a resource group |
+| **Taking access away** | remove the role, or disable the account in Entra ID, and the next sign-in fails on every machine at once; nothing to rotate |
+| **Secrets** | none shared or stored: each session's certificate lasts about an hour, and ssmate deletes it when the session ends |
+| **Audit** | each sign-in is in Entra ID's sign-in log, and on the machine your actions run under your own name |
+| **Cost** | no charge for the extension or the roles. Multi-factor through security defaults is free; Conditional Access policies need Entra ID P1 (or Microsoft 365 Business Premium) |
+
+It is the model AWS Session Manager already has, where your cloud identity and
+IAM decide who opens a session, carried over to Azure virtual machines.
+
+What it does not do on its own:
+
+- **Local passwords and keys keep working** until you retire them. Keep one
+  local account for emergencies, for the day sign-in itself is unavailable.
+- **Each machine needs setting up once**: its system-assigned managed identity
+  and the `AADSSHLoginForLinux` extension. Where machines are managed with
+  Terraform or similar, declare the identity there; one added by hand is
+  removed by the next apply, and sign-in then fails with nothing to say why.
+- **People need the role** before they can sign in. Grant it to a group rather
+  than to people one by one.
+
 `--print` shows the exact vendor command instead of running it, so you never
 have to take ssmate's word for what it does:
 
