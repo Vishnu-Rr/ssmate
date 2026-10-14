@@ -14,6 +14,7 @@ import (
 	"github.com/Vishnu-Rr/ssmate/internal/inventory"
 	"github.com/Vishnu-Rr/ssmate/internal/provider"
 	"github.com/Vishnu-Rr/ssmate/internal/resolve"
+	"github.com/Vishnu-Rr/ssmate/internal/session"
 	"github.com/Vishnu-Rr/ssmate/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -136,10 +137,24 @@ func runConnectNode(ctx context.Context, opts *options, node inventory.Node, raw
 		fmt.Fprintf(os.Stderr, "Connecting to %s (%s) in %s via %s\n",
 			node.DisplayName(), node.ID, node.Where(), inventory.RouteLabel(route.Kind))
 	}
-	return h.Shell(ctx, node, route, provider.SessionOptions{
+	return shellResult(h.Shell(ctx, node, route, provider.SessionOptions{
 		Raw: raw, Print: opts.print, Reason: opts.reason, User: opts.user,
 		Auth: opts.auth, Key: key, Command: command,
-	})
+	}))
+}
+
+// shellResult turns a shell's ending into the command's result.
+//
+// Providers that exec ssh or az report a clean exit as
+// session.ErrClosedByUser, so a held-open tunnel knows the user ended it and
+// does not rebuild it. For a shell that same ending - the user typed exit, or
+// the command run in its place succeeded - is simply success, and must not
+// come back as an error and a non-zero exit.
+func shellResult(err error) error {
+	if errors.Is(err, session.ErrClosedByUser) {
+		return nil
+	}
+	return err
 }
 
 // stdinIsTerminal reports whether stdin is an interactive terminal.
