@@ -608,6 +608,68 @@ A machine outside AWS can also be registered with Session Manager, after which
 it connects the way an EC2 instance does: nothing open and no key needed.
 `ssmate doctor <machine>` prints the steps, filled in for that machine.
 
+## Security
+
+**ssmate holds no credentials.** It signs in with what your cloud tools already
+use: an AWS profile or SSO session, `az login`, OCI's config. It never stores a
+token or a password. Where a password is asked for, ssh or az reads it from the
+terminal itself, so it never passes through ssmate, an argument list or a log.
+
+**It opens nothing.** It never creates a firewall rule, an allowlist entry or a
+bastion. The only port it listens on is the local end of a tunnel, on
+`127.0.0.1` unless you pass `--bind`.
+
+**Your cloud decides who gets in.** ssmate can never do more than your own
+login allows:
+
+| Cloud | What decides |
+|---|---|
+| AWS | IAM: `ssm:StartSession` on the machine |
+| Azure | Azure roles: Reader on the VM, its network interface and the bastion; *Virtual Machine User Login* or *Administrator Login* for Microsoft sign-in |
+| OCI | IAM policies on the bastion and its sessions |
+
+**Connections travel only the vendor's channels**: Session Manager, Azure
+Bastion over 443, the Azure Arc relay, OCI Bastion, each encrypted and
+authenticated by the cloud. Where ssh is used, host keys are checked: each
+machine's key is recorded the first time and refused if it later changes. On
+Azure that is stricter than az's own Bastion command, which turns the check
+off.
+
+**Temporary credentials do not outlive the session.** The key and certificate
+for Microsoft sign-in, and Azure Arc's relay credentials, are written to a
+directory of the session's own and deleted when it ends. An OCI bastion
+session opens with a one-time key and is deleted when you leave.
+
+**It reads your cloud configuration and never changes it.** Inventory is list
+and describe calls only; the only thing ssmate creates is the session itself.
+`ssmate doctor` prints the commands that would fix a problem and runs none of
+them. The one change az can ask about on first use, letting an Arc machine
+accept SSH, is put to you, never answered for you.
+
+**There is an audit trail.** Every session is in the cloud's own record:
+CloudTrail on AWS, Entra ID sign-in logs and the activity log on Azure, the
+audit log on OCI. `--reason` is recorded with the session on AWS and in the
+bastion session's name on OCI; Azure Bastion has nowhere to keep one.
+
+**Local files hold no secrets.** The inventory cache (written owner-only,
+since it lists your machines and addresses), the known hosts file and your
+bookmarks.
+
+**Releases are verifiable.** Every release is built by GitHub Actions from a
+tagged commit, with build provenance anyone can check and published
+checksums (see [Checking a download](#checking-a-download)). The source is
+open.
+
+**What it cannot protect against:**
+
+- **A compromised laptop.** Whoever holds your cloud session can do what you
+  can.
+- **Loose cloud permissions.** ssmate is exactly as tight as your IAM and
+  roles.
+- **Shared passwords or keys already on the machines.** Microsoft sign-in on
+  Azure and Session Manager on AWS remove the need for them; retiring them is
+  up to you.
+
 ## Why not the vendor CLIs?
 
 `aws ssm start-session`, `az network bastion tunnel`, `az ssh config` and `oci
