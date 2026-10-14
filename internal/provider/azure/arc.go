@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/Vishnu-Rr/ssmate/internal/inventory"
 	"github.com/Vishnu-Rr/ssmate/internal/provider"
 	"github.com/Vishnu-Rr/ssmate/internal/session"
+	"github.com/adrg/xdg"
 )
 
 // Azure Arc reaches machines that are not in Azure at all.
@@ -40,22 +42,35 @@ func (ArcHandler) Kind() string { return inventory.RouteArc }
 
 // Shell opens an interactive session, or runs one command.
 func (ArcHandler) Shell(ctx context.Context, n inventory.Node, r inventory.Route, o provider.SessionOptions) error {
-	args, err := arcArgs(n, r, o)
-	if err != nil {
+	// arcArgs is what a forward runs; here it checks --auth, --user and --key
+	// the same way, so the two never disagree about what is allowed.
+	if _, err := arcArgs(n, r, o); err != nil {
 		return err
 	}
-	// Arguments after -- go to OpenSSH, so a command runs in place of a shell
-	// and its exit status comes back.
-	if len(o.Command) > 0 {
-		args = append(append(args, "--"), o.Command...)
-	}
 	if o.Print {
-		fmt.Println(printable(args))
+		printArcSSH(n, r, o)
 		return nil
 	}
 	// Any password prompt comes from ssh itself and is read from the terminal,
 	// so it never passes through ssmate.
-	return runAzAs(ctx, args, arcExitError)
+	return arcSSH(ctx, n, r, o)
+}
+
+// printArcSSH shows what an Arc session runs, for --print: the configuration
+// az writes, then ssh against it, with the session's directory and the host
+// az names shown as placeholders.
+func printArcSSH(n inventory.Node, r inventory.Route, o provider.SessionOptions) {
+	auth, err := arcAuth(o)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	knownHosts := filepath.Join(xdg.ConfigHome, "ssmate", "known_hosts")
+	fmt.Println(printable(arcConfigArgs(groupOf(r.Target), nameOf(r.Target), r.Account,
+		"<dir>/config", "<dir>", auth, o)))
+	ssh := append([]string{"-F", "<dir>/config"}, sshTunnelOptionsNoPort(arcHostKeyAlias(r.Target), knownHosts)...)
+	ssh = append(ssh, "<host named in that file>")
+	fmt.Println(printCommand("ssh", append(ssh, o.Command...)))
 }
 
 // Forward opens a tunnel through the machine and holds it open.

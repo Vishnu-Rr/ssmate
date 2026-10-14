@@ -276,7 +276,11 @@ it turns host key checking off. Through ssmate a command's exit status comes
 back, a refused login exits 6 with the reason, and each VM's host key is
 recorded, under its VM ID, in a `known_hosts` in ssmate's configuration
 directory: trusted on first connection, and an error if it later changes.
-`--print` shows all three commands. A VM built with password login turned off
+`--print` shows all three commands. Azure Arc works the same way: az writes
+the connection's configuration (`az ssh config`, with Microsoft's relay proxy
+and, for Microsoft sign-in, the key and certificate) into the session's own
+directory, and ssmate runs `ssh` against it, because `az ssh arc` discards the
+exit status too. A VM built with password login turned off
 is never offered the password fallback; ssmate asks for `--key` or Microsoft
 sign-in instead.
 
@@ -346,12 +350,11 @@ Exit codes are part of the contract and will not be renumbered.
 | 7 | a prerequisite is missing |
 
 ssmate never prompts when stdin is not a terminal; it fails with a code
-instead. A login the machine refuses, through a bastion, exits 6 with the role
-or key that would admit you. One caveat worth knowing: a remote command's own
-exit status comes back through Azure Bastion and OCI Bastion, where ssmate runs
-ssh itself. AWS Session Manager does not carry one, and Azure Arc's `az ssh
-arc` discards it, so there ssmate can only report whether the session itself
-succeeded.
+instead. A login the machine refuses, through a bastion or Azure Arc, exits 6
+with the role or key that would admit you. One caveat worth knowing: a remote
+command's own exit status comes back through Azure Bastion, Azure Arc and OCI
+Bastion, where ssmate runs ssh itself. AWS Session Manager does not carry one,
+so there ssmate can only report whether the session itself succeeded.
 
 Shell completion knows your machines:
 

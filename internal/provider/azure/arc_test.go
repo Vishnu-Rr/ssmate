@@ -120,8 +120,15 @@ func TestArcPrint(t *testing.T) {
 	shell := capture(t, func() error {
 		return ArcHandler{}.Shell(context.Background(), n, r, provider.SessionOptions{Print: true, User: "ubuntu", Command: []string{"uptime"}})
 	})
-	if !strings.Contains(shell, "az ssh arc --resource-group rg-arc --name build-02 --subscription contoso --local-user ubuntu -- uptime") {
-		t.Errorf("shell: %s", shell)
+	for _, want := range []string{
+		"az ssh config --resource-type Microsoft.HybridCompute/machines --resource-group rg-arc --name build-02 --file <dir>/config --overwrite --subscription contoso --local-user ubuntu",
+		"ssh -F <dir>/config",
+		"StrictHostKeyChecking=accept-new",
+		"<host named in that file>\" uptime",
+	} {
+		if !strings.Contains(shell, want) {
+			t.Errorf("shell lacks %q:\n%s", want, shell)
+		}
 	}
 	fwd := capture(t, func() error {
 		return ArcHandler{}.Forward(context.Background(), n, r, session.Forward{LocalPort: 5432, RemotePort: 5432, RemoteHost: "db.internal"}, provider.SessionOptions{Print: true})

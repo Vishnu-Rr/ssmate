@@ -109,7 +109,9 @@ func bastionSSH(ctx context.Context, gw gateway, n inventory.Node, auth, user, k
 	// ssh runs whatever follows the destination instead of a shell, and
 	// brings its exit status home.
 	args = append(args, command...)
-	return runSSH(ctx, sshBin, args, auth, user, n, knownHosts)
+	return runSSH(ctx, sshBin, args, func(code int) error {
+		return loginFailure(code, "the bastion", auth, user, n.DisplayName(), hostKeyAlias(n), knownHosts)
+	})
 }
 
 // sshTunnelOptions are the flags for ssh through a local tunnel.
@@ -290,8 +292,9 @@ func runQuiet(ctx context.Context, bin string, env []string, args ...string) err
 	return nil
 }
 
-// runSSH hands the terminal to ssh and turns its exit status into ssmate's.
-func runSSH(ctx context.Context, bin string, args []string, auth, user string, n inventory.Node, knownHosts string) error {
+// runSSH hands the terminal to ssh and turns its exit status into ssmate's,
+// with explain reading any failure.
+func runSSH(ctx context.Context, bin string, args []string, explain func(int) error) error {
 	stopSignals := session.IgnoreTerminalSignals()
 	defer stopSignals()
 
@@ -307,16 +310,17 @@ func runSSH(ctx context.Context, bin string, args []string, auth, user string, n
 	if !errors.As(err, &ee) {
 		return err
 	}
-	return sshExitError(ee.ExitCode(), auth, user, n, knownHosts)
+	return explain(ee.ExitCode())
 }
 
-// sshExitError explains ssh's exit status.
+// loginFailure explains ssh's exit status for a session through, which is
+// "the bastion" or "Azure Arc".
 //
-// 255 is ssh's own failure. The tunnel was already up, so the bastion let us
-// through: what failed is the login, or the machine's host key, or sshd on
-// the machine. Anything else is the remote command's own status, passed
-// through unchanged for a script to branch on.
-func sshExitError(code int, auth, user string, n inventory.Node, knownHosts string) error {
+// 255 is ssh's own failure. The way in was already open, so what failed is
+// the login, the machine's host key, or sshd on the machine. Anything else is
+// the remote command's own status, passed through unchanged for a script to
+// branch on.
+func loginFailure(code int, through, auth, user, display, alias, knownHosts string) error {
 	if code != 255 {
 		return exitcode.New(exitcode.Code(code), fmt.Sprintf("the command exited %d", code), "", nil)
 	}
@@ -329,8 +333,11 @@ func sshExitError(code int, auth, user string, n inventory.Node, knownHosts stri
 	default:
 		hint = "check the password, and that the machine allows password login"
 	}
+	if through == "Azure Arc" && auth != "aad" {
+		hint = "a local account through Arc needs the Virtual Machine Local User Login role on the machine; " + hint
+	}
 	hint += fmt.Sprintf("; if ssh reported a changed host key and the machine was rebuilt: ssh-keygen -R %s -f %q",
-		hostKeyAlias(n), knownHosts)
+		alias, knownHosts)
 	return exitcode.New(exitcode.NotConnected,
-		fmt.Sprintf("could not log in to %s through the bastion", n.DisplayName()), hint, nil)
+		fmt.Sprintf("could not log in to %s through %s", display, through), hint, nil)
 }

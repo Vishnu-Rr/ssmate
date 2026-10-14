@@ -36,10 +36,10 @@ func newConnectCmd(opts *options) *cobra.Command {
 			"  ssmate connect web-1 -- tail -n 50 /var/log/syslog\n\n" +
 			"Use -- before a command that starts with a dash, or its flags would\n" +
 			"be read as ssmate's own.\n\n" +
-			"Through Azure Bastion and OCI Bastion the command's exit status comes\n" +
-			"back, so a script can branch on it. AWS Session Manager does not carry\n" +
-			"one, and Azure Arc's az ssh arc discards it, so there ssmate reports only\n" +
-			"whether the session itself succeeded.",
+			"Through Azure Bastion, Azure Arc and OCI Bastion the command's exit\n" +
+			"status comes back, so a script can branch on it. AWS Session Manager\n" +
+			"does not carry one, so there ssmate reports only whether the session\n" +
+			"itself succeeded.",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeTargets(opts),
 		RunE: func(cmd *cobra.Command, args []string) error {
