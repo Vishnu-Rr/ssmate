@@ -167,6 +167,7 @@ ssmate                          # the machine list
 ssmate web-1                    # shell, by name / identifier / address / tag / bookmark
 ssmate web-1 uptime             # run one command instead of a shell
 ssmate web-1 -- tail -n 50 /var/log/syslog
+ssmate connect web-1            # the same, spelled out; ssmate ssh web-1 works too
 ssmate ls                       # list every machine
 ssmate clouds                   # each cloud: configured, accounts, regions, machines
 ssmate forward db-1 5432:5432   # tunnel a local port

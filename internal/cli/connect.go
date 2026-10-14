@@ -23,8 +23,12 @@ import (
 func newConnectCmd(opts *options) *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{
-		Use:   "connect [target] [command...]",
-		Short: "Open a shell on a machine, or run one command on it",
+		Use: "connect [target] [command...]",
+		// ssh is what people type first, from az, gcloud and plain ssh. Without
+		// the alias the root reads it as a machine name and fuzzy-matches it
+		// against every name with an s, an s and an h in order.
+		Aliases: []string{"ssh"},
+		Short:   "Open a shell on a machine, or run one command on it",
 		Long: "Target may be an identifier, a name, a private or public address, a tag\n" +
 			"value or a bookmark. With no target, ssmate opens the machine list.\n\n" +
 			"Anything after the target runs instead of a shell:\n\n" +
