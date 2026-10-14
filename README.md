@@ -346,10 +346,12 @@ Exit codes are part of the contract and will not be renumbered.
 | 7 | a prerequisite is missing |
 
 ssmate never prompts when stdin is not a terminal; it fails with a code
-instead. One caveat worth knowing: a remote command's own exit status comes
-back through Azure Bastion and OCI Bastion, where ssmate runs ssh itself. AWS
-Session Manager does not carry one, and Azure Arc's `az ssh arc` discards it,
-so there ssmate can only report whether the session itself succeeded.
+instead. A login the machine refuses, through a bastion, exits 6 with the role
+or key that would admit you. One caveat worth knowing: a remote command's own
+exit status comes back through Azure Bastion and OCI Bastion, where ssmate runs
+ssh itself. AWS Session Manager does not carry one, and Azure Arc's `az ssh
+arc` discards it, so there ssmate can only report whether the session itself
+succeeded.
 
 Shell completion knows your machines:
 
@@ -412,7 +414,7 @@ In PowerShell, with the version from the
 [releases page](https://github.com/Vishnu-Rr/ssmate/releases):
 
 ```powershell
-$v = "0.1.2"
+$v = "0.1.6"
 Invoke-WebRequest "https://github.com/Vishnu-Rr/ssmate/releases/download/v$v/ssmate_${v}_windows_amd64.zip" -OutFile ssmate.zip
 Expand-Archive ssmate.zip -DestinationPath "$env:LOCALAPPDATA\ssmate"
 ```
@@ -441,14 +443,14 @@ shasum -a 256 -c ssmate_${VERSION}_checksums.txt --ignore-missing    # sha256sum
 
 ssmate holds no credentials and moves no bytes itself: it signs in with what
 your cloud's own tools already use, and hands each session to the vendor's
-own program. Install the ones for the clouds you use; a cloud you have not
+own program, or to your own `ssh` over the tunnel that program holds. Install the ones for the clouds you use; a cloud you have not
 signed in to is simply absent, and ssmate never makes a network call to find
 out.
 
 | Cloud | Sign in | Install |
 |---|---|---|
 | AWS | `aws configure` or `aws sso login` | the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
-| Azure | `az login` | the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), then `az extension add --name bastion`, and for Arc `az extension add --name ssh` |
+| Azure | `az login` | the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), then `az extension add --name bastion` and `az extension add --name ssh` (for Microsoft sign-in and Arc), and `ssh` |
 | OCI | `oci setup config`, which writes `~/.oci/config` | `ssh` |
 
 ### First run
