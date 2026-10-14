@@ -26,6 +26,45 @@ type Cache struct {
 	Version   int       `json:"version"`
 	FetchedAt time.Time `json:"fetched_at"`
 	Nodes     []Node    `json:"nodes"`
+	// Swept is when each cloud was last read in full. Without it a cloud the
+	// cache never read looks the same as one with no machines, and stays
+	// missing until someone thinks to pass --refresh.
+	Swept map[string]time.Time `json:"swept,omitempty"`
+	// Failed is when an automatic read of a cloud last failed, so a cloud
+	// whose sign-in is broken is not retried, slowly, on every command.
+	Failed map[string]time.Time `json:"failed,omitempty"`
+}
+
+// SweptClouds returns when each cloud was last read in full, as a map the
+// caller may change; for an older cache, inferred from its machines.
+func (c *Cache) SweptClouds() map[string]time.Time {
+	out := map[string]time.Time{}
+	if c.Swept != nil {
+		for k, v := range c.Swept {
+			out[k] = v
+		}
+		return out
+	}
+	for _, n := range c.Nodes {
+		out[n.Cloud] = c.FetchedAt
+	}
+	return out
+}
+
+// SweptAt reports when cloud was last read in full. A cache written before
+// clouds were recorded counts a cloud as read only when it holds machines
+// from it.
+func (c *Cache) SweptAt(cloud string) (time.Time, bool) {
+	if c.Swept != nil {
+		t, ok := c.Swept[cloud]
+		return t, ok
+	}
+	for _, n := range c.Nodes {
+		if n.Cloud == cloud {
+			return c.FetchedAt, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // Age is how long ago the cache was written.
@@ -67,11 +106,15 @@ func LoadCache(path string) (*Cache, error) {
 //
 // The file is mode 0600. It holds an inventory of a user's infrastructure:
 // no credentials, but not something to leave world-readable either.
-func SaveCache(path string, nodes []Node) error {
+func SaveCache(path string, nodes []Node) error { return SaveCacheSwept(path, nodes, nil, nil) }
+
+// SaveCacheSwept is SaveCache with the record of which clouds were read in
+// full, and which automatic reads failed, and when.
+func SaveCacheSwept(path string, nodes []Node, swept, failed map[string]time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create cache directory: %w", err)
 	}
-	c := Cache{Version: cacheVersion, FetchedAt: time.Now().UTC(), Nodes: nodes}
+	c := Cache{Version: cacheVersion, FetchedAt: time.Now().UTC(), Nodes: nodes, Swept: swept, Failed: failed}
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("encode cache: %w", err)

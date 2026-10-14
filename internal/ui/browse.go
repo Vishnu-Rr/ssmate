@@ -148,6 +148,12 @@ func match(nodes []inventory.Node, q Query) []Hit {
 	for i, n := range nodes {
 		hay[i] = haystack(n, q.Field)
 	}
+	// Rows that contain every word typed, in any order, come first and alone.
+	// Letters merely in order with gaps are only the fallback: offered with
+	// the rest, they made a short search match half the list.
+	if hits := containing(nodes, hay, text, q.Field == FieldName); len(hits) > 0 {
+		return hits
+	}
 	found := fuzzy.Find(text, hay)
 	out := make([]Hit, 0, len(found))
 	for _, f := range found {
@@ -162,19 +168,80 @@ func match(nodes []inventory.Node, q Query) []Hit {
 	return out
 }
 
+// containing keeps the nodes whose text holds every word of text, case
+// ignored. With underline set, it records where each word fell in the name,
+// so the row can show what matched.
+func containing(nodes []inventory.Node, hay []string, text string, underline bool) []Hit {
+	words := strings.Fields(strings.ToLower(text))
+	var out []Hit
+	for i, n := range nodes {
+		lower := strings.ToLower(hay[i])
+		all := true
+		for _, w := range words {
+			if !strings.Contains(lower, w) {
+				all = false
+				break
+			}
+		}
+		if !all {
+			continue
+		}
+		h := Hit{Node: n}
+		if underline {
+			h.Matched = wordPositions(lower, words)
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
+// wordPositions lists the character positions each word's first occurrence
+// covers in s, in order and without repeats.
+func wordPositions(s string, words []string) []int {
+	runes := []rune(s)
+	seen := map[int]bool{}
+	for _, w := range words {
+		wr := []rune(w)
+		for start := 0; start+len(wr) <= len(runes); start++ {
+			if string(runes[start:start+len(wr)]) == w {
+				for k := start; k < start+len(wr); k++ {
+					seen[k] = true
+				}
+				break
+			}
+		}
+	}
+	out := make([]int, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Ints(out)
+	return out
+}
+
 // haystack is the text one node is matched against, for a given field.
 func haystack(n inventory.Node, field FilterField) string {
 	switch field {
 	case FieldTag:
 		return strings.Join(tagValues(n), " ")
 	case FieldAll:
-		parts := []string{n.DisplayName(), n.ID, n.Cloud, n.Region, n.Account,
+		parts := []string{n.DisplayName(), idTail(n.ID), n.Cloud, n.Region, n.Account,
 			n.PrivateIP, n.PublicIP, n.Status}
 		parts = append(parts, tagValues(n)...)
 		return strings.Join(parts, " ")
 	default:
 		return n.DisplayName()
 	}
+}
+
+// idTail is the part of an identifier worth searching. An Azure resource ID
+// is a path, and the path spells out "virtualMachines", which matched every
+// Azure machine on a two-letter search; its last part is what names it.
+func idTail(id string) string {
+	if i := strings.LastIndexByte(id, '/'); i >= 0 {
+		return id[i+1:]
+	}
+	return id
 }
 
 // tagValues flattens a node's tags into stable, searchable text.

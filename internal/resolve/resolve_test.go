@@ -1,6 +1,7 @@
 package resolve
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Vishnu-Rr/ssmate/internal/inventory"
@@ -132,5 +133,71 @@ func TestResolveByAliasAndHostname(t *testing.T) {
 		if ms := Resolve(nodes, q); len(ms) != 1 || ms[0].Node.ID != "ocid1.instance.a" || !ms[0].Exact {
 			t.Errorf("%q resolved to %+v", q, ms)
 		}
+	}
+}
+
+// A name that contains the query beats one that merely has its letters in
+// order: "web1" is in web1-app, while web-prod-1 only spells w-e-b-1 with
+// gaps. Showing both is what made a short query match half the estate.
+func TestResolveContainsBeatsLooseLetters(t *testing.T) {
+	nodes := append(fixture(), inventory.Node{ID: "i-0eee", Name: "web1-app", Region: "us-west-2"})
+	got := Resolve(nodes, "web1")
+	if len(got) != 1 || got[0].Node.ID != "i-0eee" {
+		t.Fatalf("got %v, want only the machine whose name contains web1", ids(got))
+	}
+	if got[0].Fuzzy {
+		t.Error("a name that contains the query is not a loose match")
+	}
+}
+
+// Several words must each appear, in any order, as people type them.
+func TestResolveEveryWordMustAppear(t *testing.T) {
+	got := Resolve(fixture(), "prod 2")
+	if len(got) != 1 || got[0].Node.ID != "i-0bbb" {
+		t.Fatalf("got %v, want only web-prod-2", ids(got))
+	}
+}
+
+// Names that start with the query come first; then the rest, by name.
+func TestResolveStartsWithComesFirst(t *testing.T) {
+	nodes := []inventory.Node{
+		{ID: "i-1", Name: "old-db", Region: "r"},
+		{ID: "i-2", Name: "db-main", Region: "r"},
+		{ID: "i-3", Name: "analytics-db", Region: "r"},
+	}
+	got := ids(Resolve(nodes, "db"))
+	want := []string{"i-2", "i-3", "i-1"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// Loose letter matches are the last resort, and are marked so a caller never
+// connects to one without asking.
+func TestResolveMarksLooseMatches(t *testing.T) {
+	got := Resolve(fixture(), "wbprd")
+	if len(got) == 0 {
+		t.Fatal("expected loose matches when nothing contains the query")
+	}
+	for _, m := range got {
+		if !m.Fuzzy || m.Exact {
+			t.Errorf("%s: Fuzzy=%v Exact=%v, want a loose match", m.Node.ID, m.Fuzzy, m.Exact)
+		}
+	}
+}
+
+// An Azure resource ID spells out "virtualMachines", so matching inside IDs
+// made every Azure machine match "ch". Inside a name or hostname is a match;
+// an identifier matches only from its start.
+func TestResolveDoesNotMatchInsideIdentifiers(t *testing.T) {
+	nodes := []inventory.Node{
+		{ID: "/subscriptions/s/resourceGroups/g/providers/Microsoft.Compute/virtualMachines/web-1", Name: "web-1", Region: "r"},
+		{ID: "i-0abc123", Name: "cache-1", Region: "r"},
+	}
+	if got := ids(Resolve(nodes, "ch")); len(got) != 1 || got[0] != "i-0abc123" {
+		t.Fatalf("ch = %v, want only cache-1", got)
+	}
+	if got := ids(Resolve(nodes, "i-0abc")); len(got) != 1 || got[0] != "i-0abc123" {
+		t.Fatalf("an identifier's start should still find it: %v", got)
 	}
 }

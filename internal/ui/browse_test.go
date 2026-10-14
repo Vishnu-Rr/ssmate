@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -207,4 +208,45 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// A search shows names that contain what was typed; letters merely in order
+// with gaps are only the fallback, or a short search matches half the list.
+func TestSearchPrefersNamesThatContainTheText(t *testing.T) {
+	list := []inventory.Node{
+		{ID: "i-1", Name: "web1-app", Cloud: "aws", Region: "r"},
+		{ID: "i-2", Name: "web-prod-1", Cloud: "aws", Region: "r"},
+		{ID: "i-3", Name: "db-1", Cloud: "aws", Region: "r"},
+	}
+	if got := Apply(list, Query{Text: "web1"}, nil); len(got) != 1 || got[0].Node.Name != "web1-app" {
+		t.Errorf("web1: %v, want only web1-app", names(got))
+	}
+	if got := Apply(list, Query{Text: "prod 1"}, nil); len(got) != 1 || got[0].Node.Name != "web-prod-1" {
+		t.Errorf("every word must appear: %v", names(got))
+	}
+	// Nothing contains it, so the loose match is still offered.
+	if got := Apply(list, Query{Text: "wbprd"}, nil); len(got) != 1 || got[0].Node.Name != "web-prod-1" {
+		t.Errorf("fallback: %v", names(got))
+	}
+}
+
+// What a contained match underlines is the text that matched.
+func TestSearchUnderlinesTheContainedText(t *testing.T) {
+	list := []inventory.Node{{ID: "i-1", Name: "web1-app", Cloud: "aws", Region: "r"}}
+	got := Apply(list, Query{Text: "app"}, nil)
+	if len(got) != 1 || fmt.Sprint(got[0].Matched) != "[5 6 7]" {
+		t.Fatalf("matched = %v, want [5 6 7]", got)
+	}
+}
+
+// An Azure resource ID is a path that spells out "virtualMachines"; searching
+// every field must not match every Azure machine on "ch".
+func TestSearchAllFieldsIgnoresTheIDPath(t *testing.T) {
+	list := []inventory.Node{
+		{ID: "/subscriptions/s/resourceGroups/g/providers/Microsoft.Compute/virtualMachines/web-1", Name: "web-1", Cloud: "azure", Region: "r"},
+		{ID: "i-1", Name: "cache-1", Cloud: "aws", Region: "r"},
+	}
+	if got := Apply(list, Query{Text: "ch", Field: FieldAll}, nil); len(got) != 1 || got[0].Node.Name != "cache-1" {
+		t.Errorf("ch in all fields: %v, want only cache-1", names(got))
+	}
 }

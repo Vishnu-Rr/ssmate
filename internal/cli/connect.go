@@ -184,9 +184,12 @@ func fileIsTerminal(f *os.File) bool {
 func chooseNode(nodes []inventory.Node, target string, opts *options) (inventory.Node, error) {
 	target = expandBookmark(target)
 	matches := resolve.Resolve(nodes, target)
+	// A loose match - only the query's letters, in order, with gaps - is a
+	// guess. However few there are, it is offered, never taken.
+	loose := len(matches) > 0 && matches[0].Fuzzy
 
 	switch {
-	case len(matches) == 1:
+	case len(matches) == 1 && !loose:
 		return matches[0].Node, nil
 
 	case len(matches) == 0:
@@ -208,6 +211,22 @@ func chooseNode(nodes []inventory.Node, target string, opts *options) (inventory
 	// against a pipe crashes the terminal library and, worse, used to exit
 	// zero, so a script could not tell it had failed.
 	if opts.noInput || !stdinIsTerminal() {
+		if loose {
+			var near []string
+			for i, m := range matches {
+				if i == 5 {
+					near = append(near, fmt.Sprintf("and %d more", len(matches)-5))
+					break
+				}
+				near = append(near, m.Node.DisplayName())
+			}
+			return inventory.Node{}, exitcode.New(
+				exitcode.NotFound,
+				fmt.Sprintf("nothing named %q; closest: %s", target, strings.Join(near, ", ")),
+				"pass the name in full, or run interactively to pick from the list",
+				nil,
+			)
+		}
 		var b []byte
 		for _, m := range matches {
 			b = append(b, fmt.Sprintf("\n  %s  %s  %s", m.Node.ID, m.Node.Region, m.Node.DisplayName())...)
@@ -278,7 +297,11 @@ func loadInventory(ctx context.Context, opts *options) ([]inventory.Node, error)
 	}
 	if !opts.refresh {
 		if c, err := inventory.LoadCache(path); err == nil {
-			return sc.apply(joined(c.Nodes)), nil
+			need := cloudsToSweep(c, cloudsInScope(ctx, sc, opts), time.Now())
+			if len(need) == 0 {
+				return sc.apply(joined(c.Nodes)), nil
+			}
+			return sc.apply(joined(sweepMissing(ctx, opts, c, need, path))), nil
 		}
 	}
 	all, err := refreshInventory(ctx, opts, sc, path)
@@ -286,6 +309,72 @@ func loadInventory(ctx context.Context, opts *options) ([]inventory.Node, error)
 		return nil, err
 	}
 	return sc.apply(joined(all)), nil
+}
+
+// sweepMaxAge is how old a cloud's part of the cache may get before ssmate
+// reads it again by itself. Within it the list opens at once; past it, the
+// machines and their states are old enough to mislead.
+const sweepMaxAge = 24 * time.Hour
+
+// retryFailedAfter is how long a cloud whose automatic read failed is left
+// alone, so one broken sign-in does not slow every command.
+const retryFailedAfter = time.Hour
+
+// cloudsToSweep picks, from the clouds signed in here and in scope, those the
+// cache has never read in full or read too long ago, leaving out any whose
+// automatic read failed recently.
+func cloudsToSweep(c *inventory.Cache, clouds []string, now time.Time) []string {
+	var out []string
+	for _, cl := range clouds {
+		if t, ok := c.Failed[cl]; ok && now.Sub(t) < retryFailedAfter {
+			continue
+		}
+		if t, ok := c.SweptAt(cl); ok && now.Sub(t) < sweepMaxAge {
+			continue
+		}
+		out = append(out, cl)
+	}
+	return out
+}
+
+// cloudsInScope lists the clouds signed in here that this command asked for.
+// Signing in is decided from local configuration alone, so this costs no
+// network call.
+func cloudsInScope(ctx context.Context, sc scope, opts *options) []string {
+	usable, _ := provider.Available(ctx)
+	w := sc.sweep(usable, opts.allProfiles)
+	out := make([]string, 0, len(w.clouds))
+	for cl := range w.clouds {
+		out = append(out, cl)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sweepMissing reads the clouds in need in full and returns the cache with
+// them merged in. If the read fails, the cache is still the best answer
+// there is, so it is returned as it was, with the failure said.
+func sweepMissing(ctx context.Context, opts *options, c *inventory.Cache, need []string, path string) []inventory.Node {
+	t := opts.theme()
+	why := "not in the list yet"
+	if _, ok := c.SweptAt(need[0]); ok {
+		why = "last read over a day ago"
+	}
+	fmt.Fprintln(os.Stderr, t.Dim(fmt.Sprintf("Reading %s (%s)...", strings.Join(need, ", "), why)))
+
+	// The whole of each cloud, whatever this command narrows to: a partial
+	// read could not be recorded as the cloud's.
+	full := *opts
+	full.cloud, full.region, full.profile = strings.Join(need, ","), "", ""
+	fsc, err := scopeFrom(&full)
+	if err == nil {
+		var all []inventory.Node
+		if all, err = refreshInventory(ctx, &full, fsc, path); err == nil {
+			return all
+		}
+	}
+	fmt.Fprintf(os.Stderr, "  could not read %s: %v\n", strings.Join(need, ", "), err)
+	return c.Nodes
 }
 
 // joined turns the records each inventory keeps into the machines a person
@@ -334,10 +423,12 @@ func refreshInventory(ctx context.Context, opts *options, sc scope, cachePath st
 	// Sweep the clouds at once. They share nothing, and a serial sweep makes
 	// the slowest cloud's latency the sum of all of them.
 	var (
-		mu   sync.Mutex
-		all  []inventory.Node
-		errs []error
-		wg   sync.WaitGroup
+		mu     sync.Mutex
+		all    []inventory.Node
+		errs   []error
+		wg     sync.WaitGroup
+		read   = map[string]bool{}
+		failed = map[string]bool{}
 	)
 	for _, p := range usable {
 		if !w.clouds[p.Cloud()] {
@@ -352,8 +443,10 @@ func refreshInventory(ctx context.Context, opts *options, sc scope, cachePath st
 			defer mu.Unlock()
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", pv.Cloud(), err))
+				failed[pv.Cloud()] = true
 				return
 			}
+			read[pv.Cloud()] = true
 			all = append(all, nodes...)
 		}()
 	}
@@ -362,6 +455,7 @@ func refreshInventory(ctx context.Context, opts *options, sc scope, cachePath st
 	// One cloud failing must not empty the answer: the machines the others
 	// can see are still worth having.
 	if len(all) == 0 && len(errs) > 0 {
+		recordFailures(cachePath, failed)
 		return nil, errs[0]
 	}
 	for _, e := range errs {
@@ -373,14 +467,70 @@ func refreshInventory(ctx context.Context, opts *options, sc scope, cachePath st
 	// account - because each of them is a partial view of the estate, and
 	// saving a partial view as the whole of it is how a refresh of one region
 	// used to empty the cache of all the others.
-	merged := all
+	var cached *inventory.Cache
 	if c, err := inventory.LoadCache(cachePath); err == nil {
-		merged = w.merge(c.Nodes, all)
+		cached = c
 	}
-	if err := inventory.SaveCache(cachePath, merged); err != nil {
+	merged, swept, fails := settle(w, cached, all, read, failed, time.Now().UTC())
+	if err := inventory.SaveCacheSwept(cachePath, merged, swept, fails); err != nil {
 		fmt.Fprintf(os.Stderr, "  warning: could not write cache: %v\n", err)
 	}
 	return merged, nil
+}
+
+// settle folds one refresh into the cache: the machines it re-read replace
+// what was cached for them, and its record of which clouds were read in full
+// and which failed is updated.
+//
+// A cloud whose read failed was not re-read, so its cached machines stay.
+// Treating it as covered would empty it from the list over one transient
+// error, until the next good refresh. And only a read of a whole cloud, not
+// one narrowed to a region or an account, stands for the cloud.
+func settle(w sweep, cached *inventory.Cache, fresh []inventory.Node, read, failed map[string]bool, now time.Time) ([]inventory.Node, map[string]time.Time, map[string]time.Time) {
+	clouds := make(map[string]bool, len(w.clouds))
+	for cl, ok := range w.clouds {
+		clouds[cl] = ok && !failed[cl]
+	}
+	w.clouds = clouds
+
+	merged := fresh
+	swept, fails := map[string]time.Time{}, map[string]time.Time{}
+	if cached != nil {
+		merged = w.merge(cached.Nodes, fresh)
+		swept = cached.SweptClouds()
+		for k, v := range cached.Failed {
+			fails[k] = v
+		}
+	}
+	whole := w.region == "" && w.account == ""
+	for cl := range read {
+		delete(fails, cl)
+		if whole {
+			swept[cl] = now
+		}
+	}
+	for cl := range failed {
+		fails[cl] = now
+	}
+	return merged, swept, fails
+}
+
+// recordFailures notes, in an existing cache, clouds whose read just failed,
+// so they are not retried automatically on the next command.
+func recordFailures(cachePath string, failed map[string]bool) {
+	c, err := inventory.LoadCache(cachePath)
+	if err != nil {
+		return
+	}
+	fails := map[string]time.Time{}
+	for k, v := range c.Failed {
+		fails[k] = v
+	}
+	now := time.Now().UTC()
+	for cl := range failed {
+		fails[cl] = now
+	}
+	_ = inventory.SaveCacheSwept(cachePath, c.Nodes, c.SweptClouds(), fails)
 }
 
 // cloudNames lists what this build can reach, for an error that names the

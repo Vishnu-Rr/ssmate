@@ -71,7 +71,7 @@ func runDoctor(ctx context.Context, opts *options, query string, known *inventor
 		owner, _ = provider.For(found.Cloud)
 	} else if query != "" {
 		if nodes, err := loadInventory(ctx, opts); err == nil {
-			if ms := resolve.Resolve(nodes, query); len(ms) == 1 {
+			if ms := resolve.Resolve(nodes, query); len(ms) == 1 && !ms[0].Fuzzy {
 				found = &ms[0].Node
 				owner, _ = provider.For(found.Cloud)
 			}

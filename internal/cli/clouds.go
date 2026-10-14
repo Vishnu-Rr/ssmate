@@ -140,6 +140,17 @@ func writeClouds(out io.Writer, clouds []cloudSummary, fetched time.Time, t ui.T
 			fmt.Fprintf(out, "  %s %s\n", t.Heading(c.Cloud+":"), t.Dim(c.Reason))
 		}
 	}
+	// A cloud signed in here with nothing in the list has either not been
+	// read yet or truly has no machines; either way the next step is a list.
+	var empty []string
+	for _, c := range clouds {
+		if c.Configured && c.Machines == 0 {
+			empty = append(empty, c.Cloud)
+		}
+	}
+	if len(empty) > 0 && !fetched.IsZero() {
+		fmt.Fprintln(out, t.Dim("  no machines listed yet for "+strings.Join(empty, ", ")+"; ssmate ls reads them"))
+	}
 	switch {
 	case fetched.IsZero():
 		fmt.Fprintln(out, t.Dim("  no machines cached yet; run ssmate ls --refresh"))

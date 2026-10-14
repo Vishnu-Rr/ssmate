@@ -15,6 +15,10 @@ type Match struct {
 	Node   inventory.Node
 	Reason string
 	Exact  bool
+	// Fuzzy marks a match only on letters in order, with gaps. It is the
+	// last resort and the least sure: a caller must not connect to one
+	// without asking.
+	Fuzzy bool
 }
 
 // Resolve returns every node a query could mean, best first.
@@ -67,14 +71,73 @@ func Resolve(nodes []inventory.Node, query string) []Match {
 		return exact
 	}
 
-	// Nothing exact, so fall back to fuzzy matching over display names.
+	// Nothing exact, so names that contain what was typed: every word of it,
+	// in any order. Those that start with it come first.
+	if contains := containing(nodes, lower); len(contains) > 0 {
+		return contains
+	}
+
+	// Only then letters in order with gaps, which is how "ssh" came to match
+	// every name with an s, another s and an h somewhere in it.
 	names := make([]string, len(nodes))
 	for i, n := range nodes {
 		names[i] = strings.ToLower(n.DisplayName())
 	}
 	var out []Match
 	for _, hit := range fuzzy.Find(lower, names) {
-		out = append(out, Match{Node: nodes[hit.Index], Reason: "fuzzy"})
+		out = append(out, Match{Node: nodes[hit.Index], Reason: "fuzzy", Fuzzy: true})
+	}
+	return out
+}
+
+// containing returns the nodes whose name or hostname contains every word of
+// q, or whose identifier starts with it; those whose name starts with q
+// first, then by name.
+func containing(nodes []inventory.Node, q string) []Match {
+	words := strings.Fields(q)
+	if len(words) == 0 {
+		return nil
+	}
+	type hit struct {
+		m      Match
+		starts bool
+		name   string
+	}
+	var hits []hit
+	for _, n := range nodes {
+		name := strings.ToLower(n.DisplayName())
+		text := name + " " + strings.ToLower(n.Hostname)
+		id := strings.ToLower(n.ID)
+		all := true
+		for _, w := range words {
+			// Inside a name or hostname, or at the start of the identifier.
+			// Not inside it: an Azure resource ID spells out
+			// "virtualMachines", and every Azure machine matched "ch".
+			if !strings.Contains(text, w) && !strings.HasPrefix(id, w) {
+				all = false
+				break
+			}
+		}
+		if all {
+			hits = append(hits, hit{Match{Node: n, Reason: "name contains"}, strings.HasPrefix(name, q), name})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		a, b := hits[i], hits[j]
+		if a.starts != b.starts {
+			return a.starts
+		}
+		if a.name != b.name {
+			return a.name < b.name
+		}
+		if a.m.Node.Region != b.m.Node.Region {
+			return a.m.Node.Region < b.m.Node.Region
+		}
+		return a.m.Node.ID < b.m.Node.ID
+	})
+	out := make([]Match, len(hits))
+	for i, h := range hits {
+		out[i] = h.m
 	}
 	return out
 }

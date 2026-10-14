@@ -330,10 +330,22 @@ oci bastion session create-port-forwarding --bastion-id ocid1.bastion... --targe
 ssh -i <key> -N -L 127.0.0.1:5432:10.0.2.15:5432 -p 22 <session-ocid>@host.bastion.uk-london-1.oci.oraclecloud.com
 ```
 
-Inventory is cached, so the list opens instantly; `--refresh` rebuilds it. A
-full sweep of a few hundred machines across three clouds takes well under a
-minute, every enabled region searched in parallel and the clouds swept at once
-rather than one after another.
+Inventory is cached, so the list opens instantly; `--refresh` rebuilds it.
+A cloud you are signed in to that the cache has not read yet, or read more
+than a day ago, is read before the list opens, with a line saying so; one
+whose read just failed is left alone for an hour rather than retried on every
+command, and its machines already in the list stay there. A full sweep of a
+few hundred machines across three clouds takes well under a minute, every
+enabled region searched in parallel and the clouds swept at once rather than
+one after another.
+
+How a name is matched, in order: an exact identifier, address, name,
+hostname or tag value; then names and hostnames that contain every word
+typed, in any order (those starting with it first), or identifiers that start
+with it; and only then names with the letters in order and gaps between. A
+match of that last kind is never connected to on its own: you are shown it,
+and without a terminal ssmate stops with the closest names instead. The
+machine list's search works the same way.
 
 ## Diagnosis
 
