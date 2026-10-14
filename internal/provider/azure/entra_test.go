@@ -76,7 +76,18 @@ func TestEntraShellPrint(t *testing.T) {
 	out := capture(t, func() error {
 		return Handler{}.Shell(context.Background(), n, inventory.Route{}, provider.SessionOptions{Print: true})
 	})
-	if !strings.Contains(out, "--auth-type AAD") || strings.Contains(out, "--username") {
+	for _, want := range []string{
+		"az network bastion tunnel --name bas --resource-group rg-net",
+		"az ssh cert --file",
+		"CertificateFile=",
+		"StrictHostKeyChecking=accept-new",
+		"<account in the certificate>@127.0.0.1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("print lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "az az") || strings.Contains(out, "StrictHostKeyChecking=no") {
 		t.Errorf("print: %s", out)
 	}
 }

@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/adrg/xdg"
 
 	"github.com/Vishnu-Rr/ssmate/internal/exitcode"
 	"github.com/Vishnu-Rr/ssmate/internal/inventory"
@@ -41,56 +44,55 @@ func (p Provider) Shell(ctx context.Context, n inventory.Node, o provider.Sessio
 	if err != nil {
 		return err
 	}
-	login, err := loginArgs(auth, o.Key, user)
-	if err != nil {
+	if _, err := loginArgs(auth, o.Key, user); err != nil {
 		return err
 	}
 	if auth == "aad" && !o.Print && len(o.Command) == 0 {
 		fmt.Fprintln(os.Stderr, "Signing in with your Microsoft account (Entra ID).")
 	}
-	args := append([]string{
-		"network", "bastion", "ssh",
-		"--name", gw.name,
-		"--resource-group", gw.group,
-		"--target-resource-id", n.ID,
-		"--subscription", n.Account,
-	}, login...)
-	// The bastion command hands trailing arguments to OpenSSH, so a command
-	// runs in place of a shell and its exit status comes back.
-	args = append(args, o.Command...)
 	if o.Print {
-		fmt.Println(printable(args))
+		printBastionSSH(gw, n, auth, user, o.Key, o.Command)
 		return nil
 	}
-	// az prompts for the password itself and reads it straight from the
-	// terminal. ssmate never sees it, never stores it and never passes it as
+	// With a password, ssh prompts for it and reads it from the terminal
+	// itself. ssmate never sees it, never stores it and never passes it as
 	// an argument, which is the only way to handle one safely.
-	if auth == "aad" {
-		return runAzPrivateTemp(ctx, args)
-	}
-	return runAz(ctx, args)
+	return bastionSSH(ctx, gw, n, normalAuth(auth), user, o.Key, o.Command)
 }
 
-// runAzPrivateTemp runs a Microsoft sign-in session with its own temporary
-// directory, and removes that directory when the session ends.
-//
-// For Entra sign-in, az writes a fresh private key and the certificate
-// Microsoft signs for it into a temporary directory, warns that the directory
-// "contains sensitive information", and leaves it behind: one more key on disk
-// for every session, each certificate valid for an hour. Pointing az's
-// temporary directory at one made for this session, and deleting it after,
-// cleans up exactly what this session wrote. Matching az's directories by name
-// in the shared temporary directory instead would race with a second session
-// running alongside, and could delete its key while it connects.
-func runAzPrivateTemp(ctx context.Context, args []string) error {
-	dir, err := os.MkdirTemp("", "ssmate-az-")
-	if err != nil {
-		return err
+// normalAuth folds the spellings --auth accepts into aad, key or password.
+func normalAuth(auth string) string {
+	switch strings.ToLower(auth) {
+	case "aad", "entra":
+		return "aad"
+	case "key", "ssh-key":
+		return "key"
 	}
-	defer os.RemoveAll(dir)
-	// TMPDIR on Unix, TMP and TEMP on Windows: Python's tempfile reads all of them.
-	env := append(os.Environ(), "TMPDIR="+dir, "TMP="+dir, "TEMP="+dir)
-	return runAzEnv(ctx, args, azExitError, env)
+	return "password"
+}
+
+// printBastionSSH shows what a session runs, for --print: the tunnel az
+// holds, then ssh through it, with the port and certificate it would pick
+// at run time shown as placeholders.
+func printBastionSSH(gw gateway, n inventory.Node, auth, user, key string, command []string) {
+	auth = normalAuth(auth)
+	knownHosts := filepath.Join(xdg.ConfigHome, "ssmate", "known_hosts")
+	fmt.Println(printable([]string{"network", "bastion", "tunnel",
+		"--name", gw.name, "--resource-group", gw.group, "--target-resource-id", n.ID,
+		"--resource-port", "22", "--port", "<port>", "--subscription", n.Account}) + " &")
+	ssh := sshTunnelOptions("<port>", hostKeyAlias(n), knownHosts)
+	switch auth {
+	case "aad":
+		fmt.Println(printable([]string{"ssh", "cert", "--file", "<dir>/" + certFileName}))
+		ssh = append(ssh, "-i", "<dir>/id_rsa", "-o", "CertificateFile=<dir>/"+certFileName, "-o", "IdentitiesOnly=yes")
+		user = "<account in the certificate>"
+	case "key":
+		ssh = append(ssh, "-i", key, "-o", "IdentitiesOnly=yes")
+	default:
+		ssh = append(ssh, "-o", "PreferredAuthentications=keyboard-interactive,password")
+	}
+	ssh = append(ssh, user+"@127.0.0.1")
+	fmt.Println(printCommand("ssh", append(ssh, command...)))
 }
 
 // resolveLogin decides how to log in on a VM, and as whom.
@@ -280,9 +282,12 @@ func azExitError(code int) error {
 
 // printable renders the command a user could run themselves, quoting only what
 // needs it.
-func printable(args []string) string {
+func printable(args []string) string { return printCommand("az", args) }
+
+// printCommand renders bin and its arguments as a line a shell would accept.
+func printCommand(bin string, args []string) string {
 	var b strings.Builder
-	b.WriteString("az")
+	b.WriteString(bin)
 	for _, a := range args {
 		b.WriteByte(' ')
 		if strings.ContainsAny(a, " \t\"'") {
