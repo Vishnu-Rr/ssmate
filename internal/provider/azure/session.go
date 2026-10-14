@@ -65,7 +65,32 @@ func (p Provider) Shell(ctx context.Context, n inventory.Node, o provider.Sessio
 	// az prompts for the password itself and reads it straight from the
 	// terminal. ssmate never sees it, never stores it and never passes it as
 	// an argument, which is the only way to handle one safely.
+	if auth == "aad" {
+		return runAzPrivateTemp(ctx, args)
+	}
 	return runAz(ctx, args)
+}
+
+// runAzPrivateTemp runs a Microsoft sign-in session with its own temporary
+// directory, and removes that directory when the session ends.
+//
+// For Entra sign-in, az writes a fresh private key and the certificate
+// Microsoft signs for it into a temporary directory, warns that the directory
+// "contains sensitive information", and leaves it behind: one more key on disk
+// for every session, each certificate valid for an hour. Pointing az's
+// temporary directory at one made for this session, and deleting it after,
+// cleans up exactly what this session wrote. Matching az's directories by name
+// in the shared temporary directory instead would race with a second session
+// running alongside, and could delete its key while it connects.
+func runAzPrivateTemp(ctx context.Context, args []string) error {
+	dir, err := os.MkdirTemp("", "ssmate-az-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	// TMPDIR on Unix, TMP and TEMP on Windows: Python's tempfile reads all of them.
+	env := append(os.Environ(), "TMPDIR="+dir, "TMP="+dir, "TEMP="+dir)
+	return runAzEnv(ctx, args, azExitError, env)
 }
 
 // resolveLogin decides how to log in on a VM, and as whom.
@@ -206,6 +231,11 @@ func runAz(ctx context.Context, args []string) error { return runAzAs(ctx, args,
 // runAzAs hands the terminal to the vendor CLI, and reads its exit status
 // with explain, since what a status means depends on the command.
 func runAzAs(ctx context.Context, args []string, explain func(int) error) error {
+	return runAzEnv(ctx, args, explain, nil)
+}
+
+// runAzEnv is runAzAs with the child's environment given; nil inherits ours.
+func runAzEnv(ctx context.Context, args []string, explain func(int) error, env []string) error {
 	bin, err := exec.LookPath("az")
 	if err != nil {
 		return exitcode.New(exitcode.Prereq, "the Azure CLI is not installed",
@@ -216,6 +246,7 @@ func runAzAs(ctx context.Context, args []string, explain func(int) error) error 
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Env = env
 	err = cmd.Run()
 	if err == nil {
 		// az exited cleanly, which means the user ended it.
