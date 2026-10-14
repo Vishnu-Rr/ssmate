@@ -114,7 +114,9 @@ cloud permissions decide who gets in.
   No login is needed on the machine. AWS charges per session outside EC2.
 - **Azure Arc.** A server outside Azure runs Microsoft's [Connected Machine
   agent](https://learn.microsoft.com/azure/azure-arc/servers/ssh-arc-overview),
-  and `az ssh arc` carries the session. You sign in with your Microsoft account
+  and Microsoft's relay carries the session: az writes the connection's
+  configuration (`az ssh config`) and ssmate runs `ssh` with it, so the
+  command's exit status comes back. You sign in with your Microsoft account
   where the machine has the Entra login extension, or as a local account with
   `--user` (and `--key`). Arc does not take Azure's own virtual machines.
 
@@ -573,13 +575,13 @@ it connects the way an EC2 instance does: nothing open and no key needed.
 
 ## Why not the vendor CLIs?
 
-`aws ssm start-session`, `az network bastion tunnel` and `oci bastion session
-create` are exactly what ssmate calls underneath, and if you already know the
-identifier, the region, the account and — on Azure — the bastion's name and
-resource group, they are perfectly good commands. ssmate exists for the part
-before that, and for the part after it goes wrong: finding the machine across
-accounts, regions and clouds, and naming the actual cause when it will not
-connect.
+`aws ssm start-session`, `az network bastion tunnel`, `az ssh config` and `oci
+bastion session create` are exactly what ssmate calls underneath, and if you
+already know the identifier, the region, the account and — on Azure — the
+bastion's name and resource group, they are perfectly good commands. ssmate
+exists for the part before that, and for the part after it goes wrong: finding
+the machine across accounts, regions and clouds, and naming the actual cause
+when it will not connect.
 
 ## Why not the other SSM wrappers?
 
