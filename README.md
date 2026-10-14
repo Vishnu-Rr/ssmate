@@ -466,7 +466,7 @@ In PowerShell, with the version from the
 [releases page](https://github.com/Vishnu-Rr/ssmate/releases):
 
 ```powershell
-$v = "0.1.7"
+$v = "0.1.8"
 Invoke-WebRequest "https://github.com/Vishnu-Rr/ssmate/releases/download/v$v/ssmate_${v}_windows_amd64.zip" -OutFile ssmate.zip
 Expand-Archive ssmate.zip -DestinationPath "$env:LOCALAPPDATA\ssmate"
 ```
