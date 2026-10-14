@@ -239,10 +239,34 @@ On Azure, with no `--auth`, ssmate picks the login in this order:
    from the terminal itself.
 
 `ssmate doctor <vm>` says which one applies, and on a VM without the extension
-prints the three commands that enable Microsoft sign-in. Arc machines sign in
+prints the three commands that enable Microsoft sign-in. If a VM still asks for
+a password after its extension went on, run `ssmate ls --refresh --cloud azure`:
+the cached inventory predates it. Arc machines sign in
 with your Microsoft account unless `--user` names a local account. On OCI your own SSH identity logs you in, from `--key` or
 your agent; the throwaway key a bastion session opens with only ever reaches
 the bastion.
+
+#### The four kinds of login
+
+Reaching a machine and logging in on it are separate checks. Which login a
+machine accepts depends on its cloud and on what is set up on it:
+
+| Login | What you present | Where | Who decides | Taking it away |
+|---|---|---|---|---|
+| **None**: the cloud session is the login | nothing to the machine | Session Manager | your cloud permission to start sessions | remove the permission |
+| **Microsoft sign-in** (Entra ID) | an SSH certificate Microsoft signs for you, valid about an hour | Azure Bastion with the extension; Azure Arc | the two VM login roles | remove the role or disable the account |
+| **SSH key** | your private key; its public half is on the machine | Azure Bastion, Azure Arc, OCI Bastion | whoever holds the key | remove it from every machine |
+| **Password** | a local account's password | Azure Bastion | whoever knows it | change it on every machine |
+
+The first two are tied to a person and checked by the cloud every time, with
+its multi-factor and access policies; a key or a password works for anyone with
+a copy. For Microsoft sign-in, one `az login` covers everything: az makes a
+fresh key pair per session, Microsoft signs a certificate for it in your name,
+the bastion carries the connection, and `sshd` on the VM checks the
+certificate and your role. ssmate deletes that key and certificate when the
+session ends; az alone leaves them in its temporary directory. None of it is
+ssmate's own: Bastion's native client has been generally available since March
+2022, and certificate-based Microsoft sign-in is Microsoft's documented method.
 
 `--print` shows the exact vendor command instead of running it, so you never
 have to take ssmate's word for what it does:
