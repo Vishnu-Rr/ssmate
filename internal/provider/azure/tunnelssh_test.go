@@ -14,11 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
 	"github.com/adrg/xdg"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/Vishnu-Rr/ssmate/internal/exitcode"
 	"github.com/Vishnu-Rr/ssmate/internal/inventory"
+	"github.com/Vishnu-Rr/ssmate/internal/provider"
 	"github.com/Vishnu-Rr/ssmate/internal/session"
 )
 
@@ -220,5 +223,30 @@ func TestCertPrincipal(t *testing.T) {
 	}
 	if _, err := certPrincipal(filepath.Join(dir, "id_rsa.pub")); err == nil {
 		t.Error("a plain public key is not a certificate")
+	}
+}
+
+func TestPasswordOffIsNotOfferedAsTheFallback(t *testing.T) {
+	vm := vmWith()
+	vm.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{DisablePasswordAuthentication: to.Ptr(true)}
+	n := buildNode(vm, Subscription{}, map[string]string{}, map[string]nic{}, map[string][]gateway{})
+	if v, _ := n.Detailed("password_login"); v != "off" {
+		t.Fatalf("password_login = %q, want off", v)
+	}
+
+	_, _, err := resolveLogin(n, provider.SessionOptions{})
+	if err == nil || !strings.Contains(err.Error(), "password login turned off") {
+		t.Fatalf("falling back to a password on a VM without one = %v, want a refusal", err)
+	}
+	if auth, _, err := resolveLogin(n, provider.SessionOptions{Auth: "password"}); err != nil || auth != "password" {
+		t.Errorf("asked for a password explicitly = %q, %v; it should be tried", auth, err)
+	}
+	if auth, _, err := resolveLogin(n, provider.SessionOptions{Key: "/k"}); err != nil || auth != "key" {
+		t.Errorf("with --key = %q, %v", auth, err)
+	}
+
+	open := buildNode(vmWith(), Subscription{}, map[string]string{}, map[string]nic{}, map[string][]gateway{})
+	if auth, _, err := resolveLogin(open, provider.SessionOptions{}); err != nil || auth != "" {
+		t.Errorf("a VM that allows passwords = %q, %v; the password fallback should stand", auth, err)
 	}
 }

@@ -125,6 +125,17 @@ func resolveLogin(n inventory.Node, o provider.SessionOptions) (auth, user strin
 			fmt.Sprintf("cannot tell which user to log in as on %s", n.DisplayName()),
 			"pass --user", nil)
 	}
+	// Falling back to a password on a VM built without password login only
+	// earns a prompt that can never succeed. Asked for explicitly, it is
+	// tried anyway: sshd may have been changed since the VM was built.
+	if auth == "" {
+		if pw, _ := n.Detailed("password_login"); pw == "off" {
+			return "", "", exitcode.New(exitcode.Err,
+				fmt.Sprintf("%s was built with password login turned off, so a password will not work", n.DisplayName()),
+				fmt.Sprintf("log in with its key: --key <file> (the key for %s), "+
+					"or turn on Microsoft sign-in: ssmate doctor %s shows how", user, n.DisplayName()), nil)
+		}
+	}
 	return auth, user, nil
 }
 

@@ -260,13 +260,25 @@ machine accepts depends on its cloud and on what is set up on it:
 
 The first two are tied to a person and checked by the cloud every time, with
 its multi-factor and access policies; a key or a password works for anyone with
-a copy. For Microsoft sign-in, one `az login` covers everything: az makes a
-fresh key pair per session, Microsoft signs a certificate for it in your name,
-the bastion carries the connection, and `sshd` on the VM checks the
-certificate and your role. ssmate deletes that key and certificate when the
-session ends; az alone leaves them in its temporary directory. None of it is
-ssmate's own: Bastion's native client has been generally available since March
-2022, and certificate-based Microsoft sign-in is Microsoft's documented method.
+a copy. For Microsoft sign-in, one `az login` covers everything: for each
+session az makes a fresh key pair and Microsoft signs a certificate for it in
+your name, the bastion carries the connection, and `sshd` on the VM checks the
+certificate and your role. The key and certificate live in a directory of the
+session's own and are deleted when it ends. None of it is ssmate's own:
+Bastion's native client has been generally available since March 2022, and
+certificate-based Microsoft sign-in is Microsoft's documented method.
+
+How an Azure Bastion session runs: az holds the tunnel (`az network bastion
+tunnel`), and ssmate runs your own `ssh` through it. That is deliberate. `az
+network bastion ssh` would do both in one step, but it discards ssh's exit
+status, so a refused login or a failed command would come back as success, and
+it turns host key checking off. Through ssmate a command's exit status comes
+back, a refused login exits 6 with the reason, and each VM's host key is
+recorded, under its VM ID, in a `known_hosts` in ssmate's configuration
+directory: trusted on first connection, and an error if it later changes.
+`--print` shows all three commands. A VM built with password login turned off
+is never offered the password fallback; ssmate asks for `--key` or Microsoft
+sign-in instead.
 
 `--print` shows the exact vendor command instead of running it, so you never
 have to take ssmate's word for what it does:
@@ -335,8 +347,9 @@ Exit codes are part of the contract and will not be renumbered.
 
 ssmate never prompts when stdin is not a terminal; it fails with a code
 instead. One caveat worth knowing: a remote command's own exit status comes
-back on clouds reached over SSH, but AWS Session Manager does not carry one, so
-there ssmate can only report whether the session itself succeeded.
+back through Azure Bastion and OCI Bastion, where ssmate runs ssh itself. AWS
+Session Manager does not carry one, and Azure Arc's `az ssh arc` discards it,
+so there ssmate can only report whether the session itself succeeded.
 
 Shell completion knows your machines:
 
@@ -555,7 +568,7 @@ it connects the way an EC2 instance does: nothing open and no key needed.
 
 ## Why not the vendor CLIs?
 
-`aws ssm start-session`, `az network bastion ssh` and `oci bastion session
+`aws ssm start-session`, `az network bastion tunnel` and `oci bastion session
 create` are exactly what ssmate calls underneath, and if you already know the
 identifier, the region, the account and — on Azure — the bastion's name and
 resource group, they are perfectly good commands. ssmate exists for the part

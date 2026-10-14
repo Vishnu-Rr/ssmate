@@ -273,6 +273,13 @@ func buildNode(
 	if u := adminUser(vm); u != "" {
 		n.Detail["login_user"] = u
 	}
+	// Built with password login off, the VM has no password to offer, and
+	// falling back to one would only earn a prompt that cannot succeed.
+	if vm.Properties != nil && vm.Properties.OSProfile != nil && vm.Properties.OSProfile.LinuxConfiguration != nil {
+		if off := vm.Properties.OSProfile.LinuxConfiguration.DisablePasswordAuthentication; off != nil && *off {
+			n.Detail["password_login"] = "off"
+		}
+	}
 	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.OSDisk != nil &&
 		vm.Properties.StorageProfile.OSDisk.OSType != nil {
 		n.OS = string(*vm.Properties.StorageProfile.OSDisk.OSType)

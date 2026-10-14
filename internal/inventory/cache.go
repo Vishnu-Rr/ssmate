@@ -14,7 +14,7 @@ import (
 // cacheVersion is bumped whenever the Node shape changes incompatibly. A
 // cache written by a different version is discarded rather than migrated;
 // it costs one fan-out to rebuild and migration code is not worth its bugs.
-const cacheVersion = 4
+const cacheVersion = 5
 
 // ErrNoCache means there is no usable cache: absent, unreadable, corrupt, or
 // written by an incompatible version. Callers treat all of those the same
