@@ -466,7 +466,7 @@ In PowerShell, with the version from the
 [releases page](https://github.com/Vishnu-Rr/ssmate/releases):
 
 ```powershell
-$v = "0.1.8"
+$v = "0.1.9"
 Invoke-WebRequest "https://github.com/Vishnu-Rr/ssmate/releases/download/v$v/ssmate_${v}_windows_amd64.zip" -OutFile ssmate.zip
 Expand-Archive ssmate.zip -DestinationPath "$env:LOCALAPPDATA\ssmate"
 ```
@@ -611,7 +611,7 @@ is tried; the plugin read is only for managed SSH.
 
 | Way in | Already in place for it to work |
 |---|---|
-| **AWS Session Manager** | The SSM agent running (preinstalled on Amazon Linux and Ubuntu images), an instance role with `AmazonSSMManagedInstanceCore`, and outbound HTTPS from the machine to AWS |
+| **AWS Session Manager** | The SSM agent running (preinstalled on Amazon Linux and Ubuntu images), an instance role with `AmazonSSMManagedInstanceCore`, and outbound HTTPS from the machine to AWS. That policy also lets the instance read every Parameter Store value in its region; a role for sessions alone needs only `ssm:UpdateInstanceInformation` and the four `ssmmessages` channel actions, and that is the role `ssmate doctor` suggests for a machine outside AWS |
 | **Azure Bastion** | A **Standard or Premium** bastion with **tunnelling on**, in the machine's network or a peered one; port 22 allowed from the bastion; an account on the VM |
 | **Azure Arc** | The Connected Machine agent connected, and `sshd` running |
 | **OCI Bastion** | An active bastion in the machine's VCN whose allowlist admits your address, security rules letting it reach port 22, and your key on the machine; or, for managed SSH, the Bastion plugin running |

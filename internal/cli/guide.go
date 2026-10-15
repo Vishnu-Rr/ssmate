@@ -49,11 +49,15 @@ func arcAlternative(n inventory.Node) string {
 func ssmSteps(n inventory.Node) string {
 	family, arch := agentBuild(n)
 	return strings.Join([]string{
-		"AWS Session Manager. Once per AWS account, a role for the agent:",
+		"AWS Session Manager. Once per AWS account, a role for the agent, allowed sessions and nothing else",
+		"  (not AmazonSSMManagedInstanceCore, which would also let the machine read the region's Parameter Store):",
 		"    aws iam create-role --role-name SSMHybridRole --assume-role-policy-document \\",
-		`        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ssm.amazonaws.com"},"Action":"sts:AssumeRole"}]}'`,
-		"    aws iam attach-role-policy --role-name SSMHybridRole \\",
-		"        --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+		`        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ssm.amazonaws.com"},"Action":"sts:AssumeRole",` +
+			`"Condition":{"StringEquals":{"aws:SourceAccount":"<account-id>"},"ArnLike":{"aws:SourceArn":"arn:aws:ssm:<aws-region>:<account-id>:*"}}}]}'`,
+		"    aws iam put-role-policy --role-name SSMHybridRole --policy-name session-manager-only --policy-document \\",
+		`        '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["ssm:UpdateInstanceInformation",` +
+			`"ssmmessages:CreateControlChannel","ssmmessages:CreateDataChannel","ssmmessages:OpenControlChannel",` +
+			`"ssmmessages:OpenDataChannel"],"Resource":"*"}]}'`,
 		"  a registration for this one machine (the code it prints is a credential):",
 		"    aws ssm create-activation --iam-role SSMHybridRole --registration-limit 1 \\",
 		fmt.Sprintf("        --default-instance-name %s --region <aws-region>", n.DisplayName()),

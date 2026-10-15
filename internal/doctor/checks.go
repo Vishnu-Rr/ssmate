@@ -207,7 +207,10 @@ func managedCheck(node *inventory.Node) Check {
 					Remedy: fmt.Sprintf(
 						"attach a role with AmazonSSMManagedInstanceCore, or enable Default Host Management:\n"+
 							"    aws ec2 associate-iam-instance-profile --instance-id %s --region %s \\\n"+
-							"        --iam-instance-profile Name=<your-ssm-role>",
+							"        --iam-instance-profile Name=<your-ssm-role>\n"+
+							"  AmazonSSMManagedInstanceCore also lets the instance read every Parameter Store value in\n"+
+							"  the region; for sessions alone, ssm:UpdateInstanceInformation and the four\n"+
+							"  ssmmessages channel actions are enough",
 						node.ID, node.Region),
 				}
 			}

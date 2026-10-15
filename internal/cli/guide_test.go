@@ -64,3 +64,28 @@ func TestOutboundGuideOnlyWhereItHelps(t *testing.T) {
 		t.Error("an Azure VM gets Session Manager but not Arc, which does not take Azure's own machines")
 	}
 }
+
+// The role the guide creates is for sessions only. AmazonSSMManagedInstanceCore
+// also grants ssm:GetParameter on every parameter, so a registered machine
+// could read the region's Parameter Store, SecureStrings included under the
+// default key. The trust is held to the user's account and region.
+func TestOutboundGuideRoleAllowsSessionsAndNothingElse(t *testing.T) {
+	g, _ := outboundGuide(blockedOCI())
+	r := g.Run(context.Background())
+	if strings.Contains(r.Remedy, "attach-role-policy") || strings.Contains(r.Remedy, "policy/AmazonSSMManagedInstanceCore") {
+		t.Errorf("the role should not be given AmazonSSMManagedInstanceCore:\n%s", r.Remedy)
+	}
+	for _, want := range []string{
+		"ssm:UpdateInstanceInformation",
+		"ssmmessages:OpenDataChannel",
+		`"aws:SourceAccount":"<account-id>"`,
+		`"aws:SourceArn":"arn:aws:ssm:<aws-region>:<account-id>:*"`,
+	} {
+		if !strings.Contains(r.Remedy, want) {
+			t.Errorf("remedy missing %q:\n%s", want, r.Remedy)
+		}
+	}
+	if strings.Contains(r.Remedy, "ssm:GetParameter") {
+		t.Error("the role must not be able to read parameters")
+	}
+}
